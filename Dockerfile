@@ -12,8 +12,8 @@ RUN apt-get update && \
 
 # Copy project files
 COPY pyproject.toml ./
-COPY app.py ./
-COPY main.py ./
+COPY README.md ./
+COPY src/ ./src/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir .
@@ -28,4 +28,4 @@ EXPOSE 8080
 ENV NICEGUI_STORAGE_PATH=/app/.nicegui
 
 # Run the application
-CMD ["python", "app.py"]
+CMD ["python", "src/app.py"]
