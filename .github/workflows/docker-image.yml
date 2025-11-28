@@ -97,7 +97,6 @@ jobs:
     runs-on: ubuntu-latest
     if: success()
     steps:
-      - uses: lacherogwu/failed-jobs-discord-notification-action@v1
+      - uses: sarisia/actions-status-discord@v1
         with:
-          discord_webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          needs_json: ${{ toJSON(needs) }}
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
