@@ -62,3 +62,28 @@ jobs:
           - ai-yt-dlp-web:latest
         draft: false
         prerelease: false
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Docker image
+      run: |
+        docker tag ai-yt-dlp-web:${{ needs.build.outputs.version }} ghcr.io/${{ github.repository_owner }}/ai-yt-dlp-web:${{ needs.build.outputs.version }}
+        docker tag ai-yt-dlp-web:latest ghcr.io/${{ github.repository_owner }}/ai-yt-dlp-web:latest
+        docker push ghcr.io/${{ github.repository_owner }}/ai-yt-dlp-web:${{ needs.build.outputs.version }}
+        docker push ghcr.io/${{ github.repository_owner }}/ai-yt-dlp-web:latest
