@@ -4,7 +4,7 @@ Tests for the Download Manager application
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from app import (
+from src.app import (
     DownloadItem,
     DownloadStatus,
     DownloadManager,
@@ -13,6 +13,7 @@ from app import (
 
 # Test video URL
 TEST_VIDEO_URL = "https://www.youtube.com/watch?v=2PuFyjAs7JA"
+TEST_PLAYLIST_URL = "https://www.youtube.com/watch?v=2PuFyjAs7JA&list=PLUMUNvrX4FMTlbONCn0eGP968V3DMkEkl&pp=gAQB"
 
 
 class TestDownloadItem:
@@ -97,7 +98,7 @@ class TestDownloadManager:
     def test_add_to_queue(self, manager):
         """Test adding item to queue"""
         # Mock asyncio.create_task to avoid event loop issues
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item = manager.add_to_queue(TEST_VIDEO_URL)
         
         assert len(manager.queue) == 1
@@ -106,7 +107,7 @@ class TestDownloadManager:
     
     def test_remove_from_queue(self, manager):
         """Test removing item from queue"""
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item = manager.add_to_queue(TEST_VIDEO_URL)
             item_id = item.id
         
@@ -116,7 +117,7 @@ class TestDownloadManager:
     
     def test_remove_deletes_file(self, manager, temp_dir):
         """Test that removing item deletes its file"""
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item = manager.add_to_queue(TEST_VIDEO_URL)
         
         # Create a fake file
@@ -133,7 +134,7 @@ class TestDownloadManager:
     def test_clear_completed(self, manager):
         """Test clearing completed items"""
         # Add multiple items with different statuses
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item1 = manager.add_to_queue(TEST_VIDEO_URL)
             item1.status = DownloadStatus.COMPLETED
             
@@ -150,7 +151,7 @@ class TestDownloadManager:
     
     def test_clear_completed_deletes_files(self, manager, temp_dir):
         """Test that clear completed deletes associated files"""
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item1 = manager.add_to_queue(TEST_VIDEO_URL)
             item1.status = DownloadStatus.COMPLETED
         
@@ -159,7 +160,7 @@ class TestDownloadManager:
         test_file1.write_text("fake video 1")
         item1.filename = str(test_file1)
         
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item2 = manager.add_to_queue(TEST_VIDEO_URL)
             item2.status = DownloadStatus.QUEUED
         
@@ -171,7 +172,7 @@ class TestDownloadManager:
     def test_save_and_load_queue(self, manager, temp_dir):
         """Test saving and loading queue from JSON"""
         # Add items
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item1 = manager.add_to_queue(TEST_VIDEO_URL)
             item1.title = "Test Video 1"
             item2 = manager.add_to_queue(TEST_VIDEO_URL)
@@ -181,7 +182,7 @@ class TestDownloadManager:
         
         # Create new manager to load the queue
         queue_file = temp_dir / "queue.json"
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             new_manager = DownloadManager(
                 download_path=str(temp_dir / "downloads"),
                 queue_file=str(queue_file)
@@ -193,7 +194,7 @@ class TestDownloadManager:
     
     def test_load_resets_downloading_status(self, manager, temp_dir):
         """Test that downloading status is reset to queued on load"""
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             item = manager.add_to_queue(TEST_VIDEO_URL)
             item.status = DownloadStatus.DOWNLOADING
             item.progress = 50.0
@@ -202,7 +203,7 @@ class TestDownloadManager:
         
         # Create new manager to load the queue
         queue_file = temp_dir / "queue.json"
-        with patch('app.asyncio.create_task'):
+        with patch('src.app.asyncio.create_task'):
             new_manager = DownloadManager(
                 download_path=str(temp_dir / "downloads"),
                 queue_file=str(queue_file)
@@ -218,7 +219,7 @@ class TestDownloadManager:
         manager.queue.append(item)
         
         # Mock yt-dlp
-        with patch('app.yt_dlp.YoutubeDL') as mock_ydl_class:
+        with patch('src.app.yt_dlp.YoutubeDL') as mock_ydl_class:
             mock_ydl = MagicMock()
             mock_ydl_class.return_value.__enter__.return_value = mock_ydl
             
@@ -245,7 +246,7 @@ class TestDownloadManager:
         manager.queue.append(item)
         
         # Mock yt-dlp to raise an exception
-        with patch('app.yt_dlp.YoutubeDL') as mock_ydl_class:
+        with patch('src.app.yt_dlp.YoutubeDL') as mock_ydl_class:
             mock_ydl = MagicMock()
             mock_ydl_class.return_value.__enter__.return_value = mock_ydl
             mock_ydl.extract_info.side_effect = Exception("Download failed")
@@ -287,6 +288,169 @@ class TestDownloadStatus:
         assert DownloadStatus.FAILED.value == "failed"
 
 
+class TestPlaylistSupport:
+    """Tests for playlist download functionality"""
+    
+    @pytest.fixture
+    def manager(self, tmp_path):
+        """Create a test download manager"""
+        return DownloadManager(
+            download_path=str(tmp_path / "downloads"),
+            queue_file=str(tmp_path / "queue.json")
+        )
+    
+    def test_is_playlist_detection(self, manager):
+        """Test playlist URL detection"""
+        # Playlist URLs
+        assert manager._is_playlist("https://www.youtube.com/watch?v=xxx&list=PLxxx") is True
+        assert manager._is_playlist("https://www.youtube.com/playlist?list=PLxxx") is True
+        
+        # Non-playlist URLs
+        assert manager._is_playlist("https://www.youtube.com/watch?v=xxx") is False
+        assert manager._is_playlist("https://example.com/video") is False
+    
+    def test_add_playlist_to_queue_mocked(self, manager):
+        """Test adding a playlist (with mocked yt-dlp)"""
+        playlist_url = TEST_PLAYLIST_URL
+        
+        # Mock yt-dlp response
+        mock_playlist_info = {
+            'entries': [
+                {'id': 'video1', 'title': 'Video 1', 'url': 'https://www.youtube.com/watch?v=video1'},
+                {'id': 'video2', 'title': 'Video 2', 'url': 'https://www.youtube.com/watch?v=video2'},
+                {'id': 'video3', 'title': 'Video 3', 'url': 'https://www.youtube.com/watch?v=video3'},
+            ]
+        }
+        
+        with patch('src.app.asyncio.create_task'):
+            with patch('src.app.yt_dlp.YoutubeDL') as mock_ydl_class:
+                mock_ydl = MagicMock()
+                mock_ydl.extract_info.return_value = mock_playlist_info
+                mock_ydl_class.return_value.__enter__.return_value = mock_ydl
+                
+                items = manager.add_to_queue(playlist_url)
+        
+        # Should return a list of items
+        assert isinstance(items, list)
+        assert len(items) == 3
+        
+        # Check that items were added to queue
+        assert len(manager.queue) == 3
+        
+        # Verify each item
+        assert manager.queue[0].title == "Video 1"
+        assert manager.queue[1].title == "Video 2"
+        assert manager.queue[2].title == "Video 3"
+        
+        # All should be queued
+        for item in manager.queue:
+            assert item.status == DownloadStatus.QUEUED
+    
+    def test_add_playlist_with_none_entries(self, manager):
+        """Test handling playlist with None entries (skipped videos)"""
+        playlist_url = TEST_PLAYLIST_URL
+        
+        # Mock yt-dlp response with some None entries (private/deleted videos)
+        mock_playlist_info = {
+            'entries': [
+                {'id': 'video1', 'title': 'Video 1', 'url': 'https://www.youtube.com/watch?v=video1'},
+                None,  # Deleted or private video
+                {'id': 'video3', 'title': 'Video 3', 'url': 'https://www.youtube.com/watch?v=video3'},
+            ]
+        }
+        
+        with patch('src.app.asyncio.create_task'):
+            with patch('src.app.yt_dlp.YoutubeDL') as mock_ydl_class:
+                mock_ydl = MagicMock()
+                mock_ydl.extract_info.return_value = mock_playlist_info
+                mock_ydl_class.return_value.__enter__.return_value = mock_ydl
+                
+                items = manager.add_to_queue(playlist_url)
+        
+        # Should skip None entries
+        assert len(items) == 2
+        assert len(manager.queue) == 2
+        assert manager.queue[0].title == "Video 1"
+        assert manager.queue[1].title == "Video 3"
+    
+    def test_add_single_video_as_playlist(self, manager):
+        """Test that single video URL with playlist parameter is handled"""
+        playlist_url = "https://www.youtube.com/watch?v=xxx&list=PLxxx"
+        
+        # Mock response for single video (no entries key)
+        mock_info = {
+            'id': 'xxx',
+            'title': 'Single Video'
+        }
+        
+        with patch('src.app.asyncio.create_task'):
+            with patch('src.app.yt_dlp.YoutubeDL') as mock_ydl_class:
+                mock_ydl = MagicMock()
+                mock_ydl.extract_info.return_value = mock_info
+                mock_ydl_class.return_value.__enter__.return_value = mock_ydl
+                
+                items = manager.add_to_queue(playlist_url)
+        
+        # Should treat as single video
+        assert isinstance(items, list)
+        assert len(items) == 1
+        assert len(manager.queue) == 1
+    
+    def test_add_playlist_error_fallback(self, manager):
+        """Test fallback to single video on playlist extraction error"""
+        playlist_url = TEST_PLAYLIST_URL
+        
+        with patch('src.app.asyncio.create_task'):
+            with patch('src.app.yt_dlp.YoutubeDL') as mock_ydl_class:
+                mock_ydl = MagicMock()
+                mock_ydl.extract_info.side_effect = Exception("Network error")
+                mock_ydl_class.return_value.__enter__.return_value = mock_ydl
+                
+                items = manager.add_to_queue(playlist_url)
+        
+        # Should fall back to treating as single video
+        assert isinstance(items, list)
+        assert len(items) == 1
+        assert len(manager.queue) == 1
+        assert manager.queue[0].url == playlist_url
+    
+    def test_single_video_url_returns_single_item(self, manager):
+        """Test that non-playlist URL returns single DownloadItem"""
+        video_url = "https://www.youtube.com/watch?v=xxx"
+        
+        with patch('src.app.asyncio.create_task'):
+            result = manager.add_to_queue(video_url)
+        
+        # Single video should return single item (not a list)
+        assert isinstance(result, DownloadItem)
+        assert result.url == video_url
+        assert len(manager.queue) == 1
+    
+    def test_playlist_url_generation_from_id(self, manager):
+        """Test URL generation when entry only has ID"""
+        playlist_url = TEST_PLAYLIST_URL
+        
+        # Mock response with entry that has ID but no URL
+        mock_playlist_info = {
+            'entries': [
+                {'id': 'abc123', 'title': 'Video with ID only'},
+            ]
+        }
+        
+        with patch('src.app.asyncio.create_task'):
+            with patch('src.app.yt_dlp.YoutubeDL') as mock_ydl_class:
+                mock_ydl = MagicMock()
+                mock_ydl.extract_info.return_value = mock_playlist_info
+                mock_ydl_class.return_value.__enter__.return_value = mock_ydl
+                
+                items = manager.add_to_queue(playlist_url)
+        
+        # Should generate URL from ID
+        assert len(items) == 1
+        assert "abc123" in manager.queue[0].url
+        assert manager.queue[0].url == "https://www.youtube.com/watch?v=abc123"
+
+
 @pytest.mark.integration
 @pytest.mark.slow
 class TestRealDownload:
@@ -313,6 +477,43 @@ class TestRealDownload:
             # Verify file exists
             if item.filename:
                 assert Path(item.filename).exists()
+    
+    @pytest.mark.asyncio
+    async def test_real_playlist_download(self, tmp_path):
+        """Test downloading a real playlist (requires internet)"""
+        manager = DownloadManager(
+            download_path=str(tmp_path / "downloads"),
+            queue_file=str(tmp_path / "queue.json")
+        )
+        
+        # Add playlist URL
+        items = manager.add_to_queue(TEST_PLAYLIST_URL)
+        
+        # Should return a list of items
+        assert isinstance(items, list)
+        assert len(items) > 0, "Playlist should contain at least one video"
+        
+        # All items should be queued initially
+        for item in items:
+            assert item.status == DownloadStatus.QUEUED
+            assert item.url is not None
+        
+        # Download first video from the playlist
+        first_item = items[0]
+        await manager.download_video(first_item)
+        
+        # Check that download completed successfully
+        assert first_item.status in [DownloadStatus.COMPLETED, DownloadStatus.FAILED]
+        
+        if first_item.status == DownloadStatus.COMPLETED:
+            assert first_item.title != "Unknown"
+            assert first_item.filename is not None
+            # Verify file exists
+            if first_item.filename:
+                assert Path(first_item.filename).exists()
+        
+        # Verify all items are in the queue
+        assert len(manager.queue) == len(items)
 
 
 if __name__ == "__main__":

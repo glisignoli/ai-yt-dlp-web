@@ -88,8 +88,12 @@ class DownloadManager:
             print(f"Error loading queue: {e}")
             self.queue = []
     
-    def add_to_queue(self, url: str) -> DownloadItem:
-        """Add a URL to the download queue"""
+    def add_to_queue(self, url: str) -> DownloadItem | list[DownloadItem]:
+        """Add a URL to the download queue. If it's a playlist, adds all videos."""
+        # Check if URL is a playlist
+        if self._is_playlist(url):
+            return self._add_playlist_to_queue(url)
+        
         item = DownloadItem(url=url)
         self.queue.append(item)
         self.save_queue()
@@ -99,6 +103,59 @@ class DownloadManager:
             self._process_task = asyncio.create_task(self.process_queue())
         
         return item
+    
+    def _is_playlist(self, url: str) -> bool:
+        """Check if URL is a playlist"""
+        return 'list=' in url or '/playlist' in url
+    
+    def _add_playlist_to_queue(self, playlist_url: str) -> list[DownloadItem]:
+        """Extract all videos from a playlist and add them to the queue"""
+        items = []
+        
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': 'in_playlist',  # Extract playlist items
+                'yes_playlist': True,  # Force playlist extraction
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                playlist_info = ydl.extract_info(playlist_url, download=False)
+                
+                if 'entries' in playlist_info:
+                    for entry in playlist_info['entries']:
+                        if entry:
+                            video_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
+                            video_title = entry.get('title', 'Unknown')
+                            
+                            item = DownloadItem(url=video_url, title=video_title)
+                            self.queue.append(item)
+                            items.append(item)
+                else:
+                    # Not a playlist, treat as single video
+                    item = DownloadItem(url=playlist_url)
+                    self.queue.append(item)
+                    items.append(item)
+            
+            self.save_queue()
+            
+            # Start processing if not already running
+            if not self.is_processing:
+                self._process_task = asyncio.create_task(self.process_queue())
+            
+            return items
+        except Exception as e:
+            print(f"Error extracting playlist: {e}")
+            # Fallback to treating as single video
+            item = DownloadItem(url=playlist_url)
+            self.queue.append(item)
+            self.save_queue()
+            
+            if not self.is_processing:
+                self._process_task = asyncio.create_task(self.process_queue())
+            
+            return [item]
 
     def remove_from_queue(self, item_id: str):
         """Remove an item from the queue and delete its file"""
@@ -177,7 +234,7 @@ class DownloadManager:
 
         ydl_opts = {
             'format': 'best',
-            'outtmpl': str(self.download_path / '%(title)s.%(ext)s'),
+            'outtmpl': str(self.download_path / '%(title)s-%(id)s.%(ext)s'),
             'progress_hooks': [progress_hook],
             'quiet': True,
             'no_warnings': True,
@@ -308,29 +365,32 @@ def update_queue_display(container):
 async def main_page():
     """Main page with download manager UI"""
     
-    # Auto-refresh the queue display
-    queue_container = ui.column().classes('w-full gap-4')
+    # Define queue_container variable first (will be assigned later)
+    queue_container = None
     
-    async def refresh_display():
-        """Periodically refresh the display"""
-        while True:
+    async def add_url():
+        url = url_input.value.strip()
+        if url:
+            result = download_manager.add_to_queue(url)
+            url_input.value = ''
             update_queue_display(queue_container)
-            await asyncio.sleep(1)
+            
+            # Check if playlist or single video
+            if isinstance(result, list):
+                ui.notify(f'Added {len(result)} videos from playlist', type='positive')
+            else:
+                ui.notify('Added to queue', type='positive')
+        else:
+            ui.notify('Please enter a URL', type='negative')
     
-    # Start refresh task
-    ui.timer(1.0, lambda: update_queue_display(queue_container))
+    def clear_completed():
+        download_manager.clear_completed()
+        update_queue_display(queue_container)
     
     with ui.column().classes('w-full max-w-4xl mx-auto p-8 gap-6'):
         # Header
         with ui.row().classes('w-full items-center justify-between'):
             ui.label('Video Download Manager').classes('text-3xl font-bold')
-            ui.button(
-                'Clear Completed',
-                on_click=lambda: (
-                    download_manager.clear_completed(),
-                    update_queue_display(queue_container)
-                )
-            ).props('outline color=red')
         
         ui.separator()
         
@@ -344,15 +404,7 @@ async def main_page():
                     placeholder='https://www.youtube.com/watch?v=...'
                 ).classes('flex-grow').props('outlined')
                 
-                async def add_url():
-                    url = url_input.value.strip()
-                    if url:
-                        download_manager.add_to_queue(url)
-                        url_input.value = ''
-                        update_queue_display(queue_container)
-                        ui.notify('Added to queue', type='positive')
-                    else:
-                        ui.notify('Please enter a URL', type='negative')
+                url_input.on('keydown.enter', add_url)
                 
                 ui.button(
                     'Add to Queue',
@@ -362,12 +414,23 @@ async def main_page():
         
         ui.separator()
         
-        # Queue display
-        ui.label('Download Queue').classes('text-2xl font-bold')
-        queue_container
+        # Queue display section
+        with ui.row().classes('w-full items-center justify-between'):
+            ui.label('Download Queue').classes('text-2xl font-bold')
+            ui.button(
+                'Clear Completed',
+                on_click=clear_completed,
+                icon='delete_sweep'
+            ).props('outline color=red')
         
-        # Initial display
-        update_queue_display(queue_container)
+        # Queue container for download items
+        queue_container = ui.column().classes('w-full gap-4')
+    
+    # Start refresh task
+    ui.timer(1.0, lambda: update_queue_display(queue_container))
+    
+    # Initial display
+    update_queue_display(queue_container)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
