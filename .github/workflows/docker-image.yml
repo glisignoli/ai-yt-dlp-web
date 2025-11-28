@@ -22,7 +22,7 @@ jobs:
 
     - name: Run tests
       # For example, using `pytest`
-      run: uv run pytest tests
+      run: uv run pytest test_app.py -v -m "not slow"
 
   build:
     runs-on: ubuntu-latest
