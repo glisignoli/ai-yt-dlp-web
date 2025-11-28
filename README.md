@@ -2,6 +2,9 @@
 
 A web-based video download manager built with NiceGUI and yt-dlp.
 
+## AI
+There's not actual 'AI' in this project. The project itself was entirely written with Claude Sonnet 4.5 and Visual Studio Code
+
 ## Features
 
 - Add videos to a download queue via URL
@@ -18,7 +21,7 @@ This project uses `uv` for package management. Make sure you have `uv` installed
 
 ```bash
 cd ai-yt-dlp-web
-uv run app.py
+uv run src/app.py
 ```
 
 The application will start on http://localhost:8080
