@@ -83,7 +83,8 @@ jobs:
           push-to-registry: true
 
       # This step removes old images
-      - uses: actions/delete-package-versions@v5
+      - name: Delete old Docker images
+        uses: actions/delete-package-versions@v5
         with: 
           package-name: 'ai-yt-dlp-web'
           package-type: 'container'
