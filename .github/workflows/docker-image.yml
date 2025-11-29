@@ -82,6 +82,13 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+      # This step removes old images
+      - uses: actions/delete-package-versions@v5
+        with: 
+          package-name: 'ai-yt-dlp-web'
+          package-type: 'container'
+          min-versions-to-keep: 3
+
   notify-build-failure:
     needs: [build-and-push-image]
     runs-on: ubuntu-latest
