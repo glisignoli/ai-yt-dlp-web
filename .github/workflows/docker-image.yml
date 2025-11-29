@@ -89,6 +89,8 @@ jobs:
           package-name: 'ai-yt-dlp-web'
           package-type: 'container'
           min-versions-to-keep: 3
+          # Regex ignore main and nightly
+          ignore-versions: '^main$|^nightly$'
 
   notify-build-failure:
     needs: [build-and-push-image]
